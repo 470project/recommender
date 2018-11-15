@@ -6,9 +6,15 @@
 #read json file
 import json
 
+#importing the global variables
+from app import userFavs
+from app import topStories
+
 #user that we are matching
 matchUser = ["/u/1138361/iheartmwpp", "/u/8545331/Professor-Flourish-and-Blotts", "/u/4286546/Missbexiee", "/u/1697963/lydiamaartin", "/u/609412/Crystallic-Rain"]
 
+
+'''
 #userFavs saves each users favorite authors
 userFavs = {}
 topStories = {}
@@ -33,6 +39,7 @@ with open('result.jl') as f:
                 #if the current top story for the author has less favorites than the new story then make the new story the top story. else don't change anything.
                 if int(topStories[author][1]) < int(favs):
                     topStories[author] = (link, int(favs))
+'''
             
 
 
@@ -54,29 +61,33 @@ for key in userFavs:
 #Sorting Jaccard Dictionary    
 sortedJaccard = sorted(jaccardDict.items(), key=lambda kv: kv[1], reverse=True)
     
-
-topTen = []
 authorsToLookAt = []
+authorStoryScore = {}
+
 #top twenty most similar
 print("Most similar users")
 for i in range(20):
-    topTen.append(sortedJaccard[i])
-    print(sortedJaccard[i][0], sortedJaccard[i][1])
     favList = userFavs[sortedJaccard[i][0]]
     for elem in favList:
         if elem not in matchUser:
-            authorsToLookAt.append(elem)
+            if elem in authorStoryScore:
+                #adds the similarity score to the previous score that way authors that show up multiple times have their weight increased.
+                #Not the best way to add but yolo
+                newSim = authorStoryScore[elem][0] + sortedJaccard[i][1]
+                authorStoryScore[elem] = (newSim, "")
+            else:
+                authorsToLookAt.append(elem)
+                authorStoryScore[elem] = (sortedJaccard[i][1], "")        #saves the similarity score from the user and leaves the storylink blank for now.
 
-print("")
-print("Authors to check out")
-
-for elem in set(authorsToLookAt):
-    print(elem)
-
-print("")
-print("Stories to check out")
-#printing out the top stories from the authors that are recommended.
 for elem in set(authorsToLookAt):
     if elem in topStories:
-        print(topStories[elem][0], topStories[elem][1])
+        simScore = authorStoryScore[elem][0]
+        authorStoryScore[elem] = (simScore, topStories[elem][0])
+
+print("Printing Author similarityScore story link.")    #if there is no story link then the story link area will be an empty string.
+print("")
+for key in authorStoryScore:
+    print(key, authorStoryScore[key][0], authorStoryScore[key][1])
+    print("")
+
 
