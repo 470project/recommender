@@ -69,7 +69,9 @@ charIdToFeatureId = {}
 featureIdToCharId = {}
 
 featureId = 0
+
 for charId in tf_feature_names:
+    #print(featureId,charId, idToChar[int(charId)])
     charId = int(charId)
     charIdToFeatureId[charId] = featureId
     featureIdToCharId[featureId] = charId
@@ -86,18 +88,41 @@ def convertCharDicToFeatureVec(story, feature_names):
             featureId = charIdToFeatureId[charToId[char]]
             featureVec[featureId] = freq
     return featureVec
+
+storyLinkToIdDict = {}
+IdToStoryDict = {}
+storyId = 0
+for story in stories:
+    #matrix[storyId] = convertCharDicToFeatureVec(story, feature_names)
+    storyLinkToIdDict[story['storyLink']] = storyId
+    IdToStoryDict[storyId] = story
+    storyId += 1
     
 def buildDocCharacterMatrix(feature_names):
     matrix = np.zeros([len(stories), len(feature_names)])
-    storyId = 0
-    for story in stories:
-        matrix[storyId] = convertCharDicToFeatureVec(story, feature_names)
-        storyId += 1
-
-    return matrix
+    #print(len(feature_names), len(charToId))
     
+    for story in stories:
+        storyId = storyLinkToIdDict[story['storyLink']]
+        matrix[storyId] = convertCharDicToFeatureVec(story, feature_names)
+        
+    #matrix = (matrix / matrix.sum())
+    return matrix;
 
 docCharMatrix = buildDocCharacterMatrix(tf_feature_names)
+
+storyTopicScores = np.matmul(docCharMatrix, LDATopicMatrix)
+predictedTopics = [storyTopicScores[i].argmax() for i in range(len(storyTopicScores))] 
+
+def getTopicScoresForStory(story, TopicMatrix, featureNamesList):
+    storyFeatureVec = convertCharDicToFeatureVec(story, featureNamesList)
+    predictedTopicScores = np.zeros(len(TopicMatrix[0]))
+    
+    for i in range(len(TopicMatrix[0])):
+        topicVec = TopicMatrix[:,i]
+        predictedTopicScores[i] = np.dot(storyFeatureVec, topicVec)
+        
+    return predictedTopicScores
 
 def magnitude(vec):
     return np.linalg.norm(vec)
@@ -106,20 +131,25 @@ def cosine(storyVec, TopicVec):
     ANorm = magnitude(storyVec)
     BNorm = magnitude(TopicVec)
     dot = np.dot(storyVec, TopicVec)
-    return (dot / (ANorm*BNorm))
+    if((ANorm*BNorm) == 0):
+        return 0
+    res = (dot / (ANorm*BNorm))
+    return res
 
-def getTopTopicsForStory(story, TopicMatrix, featureNamesList):
-    storyFeatureVec = convertCharDicToFeatureVec(story, featureNamesList)
-    predictedTopicScores = np.zeros(len(TopicMatrix[0]))
+def getScoresForUser(user):
+    storyIds = []
+    for favorite in user['favorites']:
+        if(favorite['favStory'] in storyLinkToIdDict):
+            storyIds.append(storyLinkToIdDict[favorite['favStory']])
+    topicScores = np.zeros(n_topics)
+    for id in storyIds:
+        topicScores += getTopicScoresForStory(IdToStoryDict[id], LDATopicMatrix, tf_feature_names)
+    print(len(LDATopicMatrix), len(LDATopicMatrix[0]))
+    topicScores = topicScores / magnitude(topicScores)
+    storySimilarities = np.zeros(len(storyTopicScores))
+    for i in range(len(storyTopicScores)):
+        otherStoryTopicScores = storyTopicScores[i]
+        storySimilarities[i] = cosine(topicScores, otherStoryTopicScores)
+    return storySimilarities
     
-    for i in range(len(TopicMatrix[0])):
-        topicVec = TopicMatrix[:,i]
-        predictedTopicScores[i] = cosine(storyFeatureVec, topicVec)
-    
-    bestTopic = predictedTopicScores.argmax()
-    bestTopicScore = predictedTopicScores[bestTopic]
-    
-    return (bestTopic, bestTopicScore)
-
-story = stories[0]
-print(getTopTopicsForStory(story, LDATopicMatrix, tf_feature_names))
+print(getScoresForUser(users[0]))
