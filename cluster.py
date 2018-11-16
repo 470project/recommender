@@ -9,18 +9,11 @@ import itertools
 import collections
 from collections import Counter
 import numpy as np
+from sklearn.preprocessing import normalize
 
 class cluster():
-    def __init__(self):
-        with open('result.jl', 'rb') as f:
-            self.entities = [x for x in json_lines.reader(f)]
-            self.stories = [x for x in self.entities if str(x['pageType']) == "story" and str(x['storyType']) == '/book/Harry-Potter/']
-            self.storiesNotPotter = [x for x in self.entities if str(x['pageType']) == "story" and str(x['storyType']) != '/book/Harry-Potter/']
-            self.reviews = [x for x in self.entities if str(x['pageType']) == "review"]
-            self.users = [x for x in self.entities if str(x['pageType']) == "user"]
-            
-            print(len(self.stories),len(self.storiesNotPotter),len(self.reviews),len(self.users))
-
+    def __init__(self, stories):
+        self.stories = stories
         #generate character id mappings
         characterFreqs = Counter({})
         for x in self.stories:
@@ -92,6 +85,7 @@ class cluster():
             for story in self.stories:
                 storyId = self.storyLinkToIdDict[story['storyLink']]
                 matrix[storyId] = self.convertCharDicToFeatureVec(story, feature_names)
+            matrix = matrix / np.linalg.norm(matrix)
             return matrix
 
         #make a matrix that holds the character frequencies in each story
@@ -121,7 +115,18 @@ class cluster():
             
         return predictedTopicScores
 
-    def getScoresForUser(self, user):
+    def getStoryIdsFromUser(self, user):
+        #get the users favorite stories
+        storyIds = []
+        for favorite in user['favorites']:
+            if(favorite['favStory'] in clusterRecommender.storyLinkToIdDict):
+                storyIds.append(clusterRecommender.storyLinkToIdDict[favorite['favStory']])
+        return storyIds
+
+    def getScoresForStories(self, storyIds):
+        '''
+        Takes in a list of story ids and returns the similarity to all other stories based on the clustering
+        '''
         def magnitude(vec):
             return np.linalg.norm(vec)
 
@@ -134,15 +139,14 @@ class cluster():
             res = (dot / (ANorm*BNorm))
             return res
         
-        #get the users favorite stories
-        storyIds = []
-        for favorite in user['favorites']:
-            if(favorite['favStory'] in self.storyLinkToIdDict):
-                storyIds.append(self.storyLinkToIdDict[favorite['favStory']])
+
         topicScores = np.zeros(self.n_topics)
         #get the topic scores for each story
         for id in storyIds:
             topicScores += self.getTopicScoresForStory(self.IdToStoryDict[id], self.LDATopicMatrix, self.tf_feature_names)
+        
+        #printprint(topicScores, storyIds,magnitude(topicScores))
+        #print(topicScores, magnitude(topicScores))
         topicScores = topicScores / magnitude(topicScores)
 
         #find all story sim scores
@@ -152,11 +156,43 @@ class cluster():
             storySimilarities[i] = cosine(topicScores, otherStoryTopicScores)
         return storySimilarities
             
+with open('result.jl', 'rb') as f:
+    entities = [x for x in json_lines.reader(f)]
+    stories = [x for x in entities if str(x['pageType']) == "story"]
+    users = [x for x in entities if str(x['pageType']) == "user"]
+
 #print(getScoresForUser(self.users[0]))
-clusterRecommender = cluster()
+
+clusterRecommender = cluster(stories)
 import time
+import math
 
-start = time.time()
-print(clusterRecommender.getScoresForUser(clusterRecommender.users[0]))
-print(time.time() - start)
+def checkRMSE():
+    def RMSE(predScores, actualScores):
+        rmse = 0
+        n = len(predScores)
+        #print(predScores, n)
 
+        if(n == 0):
+            return "invalid"
+        for i in range(n):
+            predScore = predScores[i]
+            if(np.isnan(predScore)):
+                predScore = .5
+            actualScore = actualScores[i]
+            sqrDiff = math.pow(actualScore - predScore, 2)
+            rmse += sqrDiff
+            #print(rmse, sqrDiff)
+        return math.sqrt(rmse/n)
+
+    allPredictions = []
+    for user in users:
+        storyIds = clusterRecommender.getStoryIdsFromUser(user)
+        if(len(storyIds) != 0):
+            predictions = clusterRecommender.getScoresForStories(storyIds)
+            #print(list(predictions[storyIds]))
+            [allPredictions.append(x) for x in list(predictions[storyIds])]
+
+    print(RMSE(allPredictions,np.ones(len(allPredictions))))
+
+checkRMSE()
